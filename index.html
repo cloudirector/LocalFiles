@@ -1,0 +1,230 @@
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+    }
+
+    h1 {
+        color: #333;
+    }
+
+    label {
+        margin-top: 10px;
+        display: block;
+    }
+
+    input[type="file"] {
+        margin-top: 5px;
+    }
+
+    button {
+        margin-top: 20px;
+        padding: 10px 20px;
+    }
+
+    .file-list {
+        margin-top: 20px;
+    }
+
+    .file-item {
+        margin-bottom: 10px;
+    }
+
+    .container {
+        display: flex;
+        flex-direction: row;
+    }
+
+    .options {
+        width: 100%;
+    }
+
+    .log {
+        width: 100%;
+        height: 100%;
+        background-color: black;
+        color: white;
+    }
+
+    .logContainer {
+        display: flex;
+        background-color: red;
+        width: 100%;
+        flex-direction: column;
+    }
+
+    .testLog {
+        background-color: white;
+        width: 80%;
+    }
+    .testLogContainer {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+</style>
+
+<div class="container">
+    <div class="options">
+        <hr />
+        <h1>Upload and Package</h1>
+        <input type="file" id="filesUpload" multiple />
+        <br />
+        <input type="text" id="combinedFileName" placeholder="example.combine" />
+        <button onclick="combineFiles()">Combine Files</button>
+        <hr />
+
+        <h2>Download Package</h2>
+        <a id="downloadLink" style="display:none;" href="#">Download Combined File</a>
+
+        <hr />
+        <h3>Decombine Files</h3>
+        <input type="file" id="combineFile" />
+        <button onclick="decombineFiles()">Decombine Files</button>
+
+        <div id="decombinedFiles" style="margin-top: 20px;"></div>
+        <div id="fileList" class="file-list" style="display:none;"></div>
+        <hr />
+    </div>
+    <div class="logContainer">
+        <textbox id="logTextBox" class="log">
+        </textbox>
+        <div class="testLogContainer">
+            <input type="text" id="testLog" class="testLog">
+            </input>
+            <button onclick="logit(document.getElementById('testLog').value);"></button>
+        </div>
+    </div>
+</div>
+<script>
+    function logit(text) {
+        const log = document.getElementById("logTextBox");
+        log.innerHTML = log.innerHTML + text + "&#13;&#10;";
+    }
+    logit("Initialized LogIt function");
+
+    function encodeFileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+    // logit("Testing b64 function...");
+    // logit("HelloWorld.txt ~> " + encodeFileToBase64())
+
+    function combineFiles() {
+        logit("combineFiles function start...")
+        const files = document.getElementById('filesUpload').files;
+        logit("File Array with " + file.length + "files initialized")
+
+        const combinedFileName = document.getElementById('combinedFileName').value || "CombinedFile.combine";
+        logit("Filename: " + combinedFileName)
+
+        let combinedData = '';
+
+        Array.from(files).forEach(async (file) => {
+            const fileName = file.name;
+            const fileExtension = file.name.split('.').pop();
+            const fileContent = fileExtension === 'wasm' || fileExtension === 'data'
+                ? await encodeFileToBase64(file)  // Convert binary files to base64
+                : await readFileAsText(file);    // Read text files as plain text
+
+            const header = `
+<HEADER>
+name="${fileName}",
+extension="${fileExtension}"
+</HEADER>
+<CONTENT>
+${fileContent}
+</CONTENT>
+`;
+
+            combinedData += header;
+        });
+
+        // Trigger download of the combined file
+        const blob = new Blob([combinedData], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const downloadLink = document.getElementById('downloadLink');
+        downloadLink.href = url;
+        downloadLink.download = combinedFileName;
+        downloadLink.style.display = 'block';
+    }
+
+    function readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsText(file);
+        });
+    }
+
+    async function decombineFiles() {
+        const combineFile = document.getElementById('combineFile').files[0];
+        if (!combineFile) return;
+
+        const reader = new FileReader();
+        reader.onload = async function () {
+            const content = reader.result;
+            const fileSections = content.split(/<HEADER>/).slice(1); // Split into file sections by HEADER
+
+            const decombinedFilesContainer = document.getElementById('decombinedFiles');
+            const fileListContainer = document.getElementById('fileList');
+            fileListContainer.innerHTML = ''; // Clear previous output
+            decombinedFilesContainer.innerHTML = ''; // Clear previous file links
+
+            // Show file list first
+            fileListContainer.style.display = 'block';
+
+            for (const section of fileSections) {
+                const [headerPart, contentPart] = section.split('</HEADER>'); // Split HEADER and CONTENT
+                const nameMatch = headerPart.match(/name="([^"]+)"/);
+                const extensionMatch = headerPart.match(/extension="([^"]+)"/);
+
+                if (nameMatch && extensionMatch) {
+                    const fileName = nameMatch[1];
+                    const extension = extensionMatch[1];
+                    const fileSize = contentPart.length; // Get content size
+                    const fileItem = document.createElement('div');
+                    fileItem.classList.add('file-item');
+                    fileItem.innerHTML = `File: ${fileName} (${extension}), Size: ${fileSize} bytes`;
+
+                    fileListContainer.appendChild(fileItem);
+
+                    let contentDecoded = contentPart.trim();
+
+                    // Decode content based on file type
+                    if (extension === 'wasm' || extension === 'data') {
+                        contentDecoded = decodeBase64(contentDecoded); // Decode base64
+                    }
+
+                    const link = document.createElement('a');
+                    const blob = new Blob([contentDecoded], { type: getMimeType(extension) });
+                    link.href = URL.createObjectURL(blob);
+                    link.download = fileName;
+                    link.textContent = `Download ${fileName}`;
+                    decombinedFilesContainer.appendChild(link);
+                    decombinedFilesContainer.appendChild(document.createElement('br'));
+                }
+            }
+        };
+
+        reader.readAsText(combineFile);
+    }
+
+    function decodeBase64(base64) {
+        return atob(base64);  // Decode base64 content back to original binary
+    }
+
+    function getMimeType(extension) {
+        switch (extension) {
+            case 'wasm': return 'application/wasm';
+            case 'js': return 'application/javascript';
+            case 'txt': return 'text/plain';
+            default: return 'application/octet-stream';
+        }
+    }
+</script>
