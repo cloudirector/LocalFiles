@@ -17,11 +17,6 @@
         margin-top: 5px;
     }
 
-    button {
-        margin-top: 20px;
-        padding: 10px 20px;
-    }
-
     .file-list {
         margin-top: 20px;
     }
@@ -57,10 +52,15 @@
         background-color: white;
         width: 80%;
     }
+
     .testLogContainer {
         width: 100%;
         display: flex;
-        flex-direction: column;
+    }
+
+    .testLogButton {
+        width: 20%;
+        height: 100%;
     }
 </style>
 
@@ -87,21 +87,32 @@
         <hr />
     </div>
     <div class="logContainer">
-        <textbox id="logTextBox" class="log">
-        </textbox>
+        <textarea id="logTextBox" class="log" readonly>
+        </textarea>
         <div class="testLogContainer">
             <input type="text" id="testLog" class="testLog">
             </input>
-            <button onclick="logit(document.getElementById('testLog').value);"></button>
+            <button class="testLogButton" onclick="logit(document.getElementById('testLog').value);"></button>
         </div>
     </div>
 </div>
 <script>
+    newLineAscii = "&#13;&#10;";
     function logit(text) {
         const log = document.getElementById("logTextBox");
         log.innerHTML = log.innerHTML + text + "&#13;&#10;";
     }
-    logit("Initialized LogIt function");
+    logit(newLineAscii + "Initialized LogIt function");
+
+    function readFileAsText(file) {
+        const reader = new FileReader()
+        return new Promise((resolve, reject) => {
+            reader.onload = event => resolve(event.target.result)
+            reader.onerror = error => reject(error)
+            reader.readAsText(file)
+        })
+    }
+
 
     function encodeFileToBase64(file) {
         return new Promise((resolve, reject) => {
@@ -115,51 +126,51 @@
     // logit("HelloWorld.txt ~> " + encodeFileToBase64())
 
     function combineFiles() {
-        logit("combineFiles function start...")
         const files = document.getElementById('filesUpload').files;
-        logit("File Array with " + file.length + "files initialized")
+        logit("[*] Starting to combine" + files.length + " files...")
 
-        const combinedFileName = document.getElementById('combinedFileName').value || "CombinedFile.combine";
-        logit("Filename: " + combinedFileName)
+        const combinedFileName = document.getElementById('combinedFileName').value || "example.combine";
+        logit("[-] Working on file: " + combinedFileName)
 
         let combinedData = '';
-
-        Array.from(files).forEach(async (file) => {
+        let fileContent = '';
+        for (let i = 0; i < files.length; i++) {
+            let file = files[i];
             const fileName = file.name;
-            const fileExtension = file.name.split('.').pop();
-            const fileContent = fileExtension === 'wasm' || fileExtension === 'data'
-                ? await encodeFileToBase64(file)  // Convert binary files to base64
-                : await readFileAsText(file);    // Read text files as plain text
-
+            const fileType = file.type;
+            fileContent = "";
+            if (fileType.startsWith("text")) {
+                logit("loading content as text")
+                fileContent = readFileAsText(file);
+            } else {
+                logit("loading content as other")
+                fileContent = encodeFileToBase64(file);
+            }
             const header = `
 <HEADER>
 name="${fileName}",
-extension="${fileExtension}"
+extension="${fileType}"
 </HEADER>
+`;
+            const content = `
 <CONTENT>
 ${fileContent}
 </CONTENT>
-`;
+            `
+            logit("[ Name: " + fileName + ", extension: " + fileType)
+            logit("Header Size: " + header.length + " Content size: " + content.length + "]")
+            combinedData += (header + content);
+        }
 
-            combinedData += header;
-        });
-
+        logit("[*] Full combined size: " + combinedData.length)
         // Trigger download of the combined file
         const blob = new Blob([combinedData], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
+        logit("Blob generated:" + url)
         const downloadLink = document.getElementById('downloadLink');
         downloadLink.href = url;
         downloadLink.download = combinedFileName;
         downloadLink.style.display = 'block';
-    }
-
-    function readFileAsText(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsText(file);
-        });
     }
 
     async function decombineFiles() {
