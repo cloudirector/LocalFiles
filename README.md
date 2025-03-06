@@ -1,5 +1,5 @@
-# LocalPlatform
-A platform to play games locally without touching CORS
+# LocalFiles
+A tool to load files without touching CORS
 
 - [ ] Get it working
 - [ ] Add repo ig idk
